@@ -6,6 +6,8 @@ import iam = require('@aws-cdk/aws-iam');
 import codebuild = require('@aws-cdk/aws-codebuild');
 import codecommit = require('@aws-cdk/aws-codecommit');
 import targets = require('@aws-cdk/aws-events-targets');
+import { KubernetesVersion } from '@aws-cdk/aws-eks';
+import { ComputeType, LocalCacheMode } from '@aws-cdk/aws-codebuild';
 
 export class CdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -14,17 +16,17 @@ export class CdkStack extends cdk.Stack {
     /**
      * Uncomment below if you perfer using default VPC
      */
-    const vpc = ec2.Vpc.fromLookup(this, 'VPC', {
+/*    const vpc = ec2.Vpc.fromLookup(this, 'VPC', {
       isDefault: true
-    })
+    })*/
 
     /**
      * Create a new VPC with single NAT Gateway
      */
-    // const vpc = new ec2.Vpc(this, 'NewVPC', {
-    //   cidr: '10.0.0.0/16',
-    //   natGateways: 1
-    // })
+    const vpc = new ec2.Vpc(this, 'NewVPC', {
+      cidr: '10.100.0.0/16',
+      natGateways: 1
+    })
 
     const clusterAdmin = new iam.Role(this, 'AdminRole', {
       assumedBy: new iam.AccountRootPrincipal()
@@ -35,6 +37,7 @@ export class CdkStack extends cdk.Stack {
       defaultCapacity: 2,
       mastersRole: clusterAdmin,
       outputClusterName: true,
+      version: KubernetesVersion.V1_16
     });
 
     const ecrRepo = new ecr.Repository(this, 'EcrRepo')
@@ -46,11 +49,13 @@ export class CdkStack extends cdk.Stack {
     const project = new codebuild.Project(this, 'MyProject', {
       projectName: `${this.stackName}`,
       source: codebuild.Source.codeCommit({ repository }),
+      cache: codebuild.Cache.local(LocalCacheMode.DOCKER_LAYER, LocalCacheMode.CUSTOM),
       environment: {
         buildImage: codebuild.LinuxBuildImage.fromAsset(this, 'CustomImage', {
           directory: '../dockerAssets.d',
         }),
-        privileged: true
+        computeType: ComputeType.LARGE,
+        privileged: true,
       },
       environmentVariables: {
         'CLUSTER_NAME': {
@@ -63,6 +68,12 @@ export class CdkStack extends cdk.Stack {
       buildSpec: codebuild.BuildSpec.fromObject({
         version: "0.2",
         phases: {
+          install: {
+            commands: [
+            "curl -sS -o inline_scan.sh https://download.sysdig.com/stable/inline_scan.sh",
+            "chmod +x inline_scan.sh"
+            ]
+          },
           pre_build: {
             commands: [
               'env',
@@ -75,11 +86,15 @@ export class CdkStack extends cdk.Stack {
               'cd flask-docker-app',
               `docker build -t $ECR_REPO_URI:$TAG .`,
               '$(aws ecr get-login --no-include-email)',
-              'docker push $ECR_REPO_URI:$TAG'
+              'cd ..',
+              `./inline_scan.sh analyze -s https://secure.sysdig.com -k <SYSDIG_KEY> -P $ECR_REPO_URI:$TAG > $TAG.txt || true`,
+              'grep \"status is pass\" -iq $TAG.txt && echo \"Image scan passed\" && exit 0 || echo \"Image scan failed\" && exit 1',
+              'docker push $ECR_REPO_URI:$TAG',
             ]
           },
           post_build: {
             commands: [
+              'echo $CODEBUILD_BUILD_SUCCEEDING | grep 0 -q && exit 1 || exit 0',
               'kubectl get no',
               'kubectl set image deployment flask flask=$ECR_REPO_URI:$TAG'
             ]

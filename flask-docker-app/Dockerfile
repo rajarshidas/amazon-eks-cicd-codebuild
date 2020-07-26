@@ -1,13 +1,10 @@
-FROM alpine:3.8
-RUN apk add python3 py-pip && \
-python3 -m ensurepip && \
-pip install --upgrade pip && \
-pip install flask
+# Passes sysdig scan
+FROM php:rc-apache
 
-ENV FLASK_APP app.py
-ENV PLATFORM 'Amazon EKS'
+# Fails sysdig scan
+#FROM php:7.0-apache
 
-WORKDIR /app
-COPY . /app/
+RUN apt-get update && \
+    apt-get clean
 
-CMD ["python", "app.py"]
+COPY myapp /var/www/html/
