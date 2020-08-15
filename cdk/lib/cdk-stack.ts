@@ -32,6 +32,7 @@ export class CdkStack extends cdk.Stack {
       assumedBy: new iam.AccountRootPrincipal()
     });
 
+    // The following will create an EKS cluster with a managed node group. Remote access using an EC2 key pair won't be enabled.
     const cluster = new eks.Cluster(this, 'Cluster', {
       vpc,
       defaultCapacity: 2,
@@ -40,6 +41,23 @@ export class CdkStack extends cdk.Stack {
       version: KubernetesVersion.V1_16
     });
 
+/*     In case an EKS cluster with managed nodes with remote access using EC2 key pair is required, 
+    comment the previous cluster creation block and uncomment the following. Provide the EC2 key pair
+    name available in the region being deployed to.
+*/ 
+  /*    const cluster = new eks.Cluster(this, 'Cluster', {
+        vpc,
+        defaultCapacity: 2,
+        mastersRole: clusterAdmin,
+        outputClusterName: true,
+        version: KubernetesVersion.V1_16,
+        defaultCapacity: 0
+      });
+      cluster.addNodegroup('sdeksnodegrp', {
+      nodegroupName: 'sdeksnodegrp',
+      remoteAccess : { sshKeyName: 'KEYPAIRNAME.pem'}
+    });*/
+    
     const ecrRepo = new ecr.Repository(this, 'EcrRepo')
 
     const repository = new codecommit.Repository(this, 'CodeCommitRepo', {
