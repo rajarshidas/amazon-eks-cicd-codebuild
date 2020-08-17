@@ -47,7 +47,6 @@ export class CdkStack extends cdk.Stack {
 */ 
   /*    const cluster = new eks.Cluster(this, 'Cluster', {
         vpc,
-        defaultCapacity: 2,
         mastersRole: clusterAdmin,
         outputClusterName: true,
         version: KubernetesVersion.V1_16,
